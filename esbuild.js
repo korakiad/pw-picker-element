@@ -16,7 +16,7 @@ const opts = {
 };
 
 function copyFloatBall() {
-  const src = path.join("..", "playwright-healer", "src", "element-picker", "injected", "float-ball.js");
+  const src = path.join("src", "injected", "float-ball.js");
   const dest = path.join("dist", "injected", "float-ball.js");
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
