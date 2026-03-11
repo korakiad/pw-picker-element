@@ -21,7 +21,7 @@ export interface ElementInfo {
 }
 
 export interface PickerResult {
-  exitCode: number; // 0=success, 1=timeout, 2=cdp-fail
+  exitCode: 0 | 1 | 2;
   elementInfo?: ElementInfo;
   error?: string;
 }
@@ -36,7 +36,7 @@ export interface PickerOptions {
  * Build frame chain from Playwright's frame tree.
  * Uses the Frame API which has full access regardless of cross-origin restrictions.
  */
-function buildFrameChain(
+export function buildFrameChain(
   frame: Frame
 ): Array<{ tagName: string; name: string | null; src: string | null }> {
   const chain: Array<{
