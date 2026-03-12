@@ -37,7 +37,7 @@ export interface PickerOptions {
  * Uses the Frame API which has full access regardless of cross-origin restrictions.
  */
 export function buildFrameChain(
-  frame: Frame
+  frame: Frame,
 ): Array<{ tagName: string; name: string | null; src: string | null }> {
   const chain: Array<{
     tagName: string;
@@ -65,9 +65,9 @@ export async function runPicker(options: PickerOptions): Promise<PickerResult> {
   try {
     // 1. Connect to browser via CDP
     try {
-      browser = await chromium.connectOverCDP(
-        `http://127.0.0.1:${cdpPort}`
-      );
+      browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, {
+        isLocal: true,
+      });
     } catch (err: any) {
       return {
         exitCode: 2,
@@ -139,7 +139,7 @@ export async function runPicker(options: PickerOptions): Promise<PickerResult> {
     // 7. Wait for element-selected or timeout
     const timeoutMs = timeoutSec * 1000;
     const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), timeoutMs)
+      setTimeout(() => resolve(null), timeoutMs),
     );
 
     const result = await Promise.race([elementPromise, timeoutPromise]);
