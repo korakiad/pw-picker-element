@@ -1,41 +1,66 @@
 ---
 name: playwright-picker
-description: Visual element picker — lets user select an element in the browser
-allowed-tools: Bash(playwright-picker:*)
+description: Visual element picker — user clicks element in browser, returns raw element info as JSON
+allowed-tools: Bash(playwright-cli:*)
 ---
 
 ## pick-element
 
-`playwright-picker pick --cdp=<port>` — activate visual element picker in a running browser.
+Visual overlay that lets the user click an element in the browser. Returns raw element info as JSON.
 
-The user sees an inspect overlay (hover to highlight, click to select). After selection, the user confirms or re-picks. Returns raw element info as JSON to stdout.
+### Prerequisites
 
-### Arguments
+- Browser running with `--remote-debugging-port=<port>`
+- `playwright-cli` daemon connected (`playwright-cli open --config=<path>`)
 
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--cdp` | yes | — | CDP port of running browser |
-| `--hint` | no | — | Hint text shown to user |
-| `--timeout` | no | `60` | Seconds before timeout |
+### Step 1: Inject float-ball.js
 
-### Exit codes
+Read `float-ball.js` from this skill directory, then inject into all frames:
 
-- `0` — element selected successfully
-- `1` — timeout (user did not select)
-- `2` — CDP connection failed or error
+```
+playwright-cli run-code "
+  const script = `<FLOAT_BALL_JS_CONTENT>`;
+  for (const frame of page.frames()) {
+    const chain = [];
+    let f = frame;
+    while (f.parentFrame()) {
+      chain.unshift({ tagName: 'iframe', name: f.name() || null, src: f.url() || null });
+      f = f.parentFrame();
+    }
+    try {
+      await frame.evaluate(script.replace('__FRAME_CHAIN__', JSON.stringify(chain)));
+    } catch {}
+  }
+"
+```
 
-### Output fields
+The picker activates automatically — user sees hover highlight overlay.
 
-`tagName`, `id`, `role`, `ariaLabel`, `classList`, `attributes`, `textContent`, `parentPath`, `outerHTML`, `frameChain`
+### Step 2: Poll for result
+
+Poll every 3 seconds until non-null or 60 seconds elapsed:
+
+```
+playwright-cli eval "JSON.stringify(window.__pickerResult)"
+```
+
+- `null` / `undefined` → user hasn't confirmed yet, keep polling
+- JSON string → user confirmed, parse and use
+
+### Step 3: Use element info
+
+Result fields: `tagName`, `id`, `role`, `ariaLabel`, `classList`, `attributes`, `textContent`, `parentPath`, `outerHTML`, `frameChain`
+
+The agent decides how to use this info based on project context (framework, test patterns, POM structure).
+
+### Iframe elements
+
+When `frameChain` is non-null, the element lives inside iframe(s). Each entry has `{ tagName, name, src }`. Use the chain to build the appropriate frame selector for the project's framework.
 
 ### Dropdown pattern (multi-step)
 
 If the selected element is a dropdown/select/combobox:
 1. First pick returns the dropdown container info
 2. Use `playwright-cli click <ref>` to open the dropdown
-3. Call `playwright-picker pick --cdp=<port> --hint="Select the option"` again
+3. Re-inject float-ball.js and poll again for the option element
 4. Build selector from both element infos
-
-### Iframe elements
-
-When `frameChain` is non-null, the element lives inside iframe(s). Each entry has `tagName`, `name`, `src`. Use the chain to build `page.frameLocator(...)` selectors.
