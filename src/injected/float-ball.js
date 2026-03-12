@@ -8,8 +8,6 @@
     frameChain: __FRAME_CHAIN__,  // Pre-computed by Playwright (works cross-origin)
   };
 
-  const HAS_EF = typeof customElements !== 'undefined' && !!customElements.get('ef-button');
-
   if (window.__selectorFinderActive) return;
   window.__selectorFinderActive = true;
 
@@ -125,7 +123,7 @@
   style.textContent = `
     * { box-sizing: border-box; margin: 0; padding: 0; }
     .sf-ball {
-      position: fixed; bottom: 24px; right: 24px;
+      position: fixed; bottom: 24px; right: 24px; z-index: 2;
       width: 48px; height: 48px; border-radius: 50%;
       background: #0969da; color: #fff; border: none;
       cursor: grab; display: flex; align-items: center; justify-content: center;
@@ -135,8 +133,12 @@
     }
     .sf-ball:hover { transform: scale(1.1); }
     .sf-ball.active { background: #1a7f37; }
+    .sf-drag-shield {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 1; display: none; cursor: grabbing;
+    }
     .sf-panel {
-      position: fixed; bottom: 80px; right: 24px;
+      position: fixed;
       width: 380px; max-height: 480px; overflow-y: auto;
       background: #fff; border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.18);
@@ -207,6 +209,11 @@
   overlay.className = 'sf-overlay';
   shadow.appendChild(overlay);
 
+  // --- Drag Shield (blocks iframe mouse capture during ball drag) ---
+  const dragShield = document.createElement('div');
+  dragShield.className = 'sf-drag-shield';
+  shadow.appendChild(dragShield);
+
   // --- Float Ball ---
   const ball = document.createElement('button');
   ball.className = 'sf-ball';
@@ -247,6 +254,46 @@
   let panelOpen = false;
   let pendingElementInfo = null;
 
+  // --- Position panel relative to ball ---
+  function positionPanel() {
+    if (!panelOpen) return;
+    const br = ball.getBoundingClientRect();
+    const pr = panel.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const gap = 8;
+    const ph = pr.height || 200;
+    const pw = 380;
+
+    // Vertical: prefer above ball, fall back to below
+    let top = (br.top - gap - ph > 0) ? br.top - gap - ph : br.bottom + gap;
+    // Horizontal: center on ball, clamp to viewport
+    let left = br.left + br.width / 2 - pw / 2;
+    left = Math.max(gap, Math.min(left, vw - pw - gap));
+    top = Math.max(gap, Math.min(top, vh - ph - gap));
+
+    panel.style.top = top + 'px';
+    panel.style.left = left + 'px';
+    panel.style.bottom = 'auto';
+    panel.style.right = 'auto';
+  }
+
+  // --- Clamp ball to viewport on resize ---
+  function clampBall() {
+    // Only clamp if ball was dragged to explicit position
+    if (!ball.style.left) { positionPanel(); return; }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = parseInt(ball.style.left, 10);
+    let top = parseInt(ball.style.top, 10);
+    left = Math.max(0, Math.min(left, vw - 48));
+    top = Math.max(0, Math.min(top, vh - 48));
+    ball.style.left = left + 'px';
+    ball.style.top = top + 'px';
+    positionPanel();
+  }
+  window.addEventListener('resize', clampBall);
+
   // --- WebSocket ---
   let ws = null;
   function connectWs() {
@@ -284,14 +331,8 @@
               if (hintEl) {
                 hintEl.textContent = '\uD83C\uDFAF ' + msg.payload.hint;
                 hintEl.style.display = 'block';
-                if (HAS_EF) {
-                  hintEl.style.background = '#1a2332';
-                  hintEl.style.color = '#7eb8f0';
-                  hintEl.style.border = '1px solid #2d4a6d';
-                } else {
-                  hintEl.style.background = '#fff3cd';
-                  hintEl.style.color = '#664d03';
-                }
+                hintEl.style.background = '#fff3cd';
+                hintEl.style.color = '#664d03';
               }
             }
             break;
@@ -312,27 +353,10 @@
   connectWs();
 
   if (CONFIG.mode === 'pick') {
-    ball.style.display = 'none';
     panelOpen = true;
     panel.classList.add('open');
     togglePicker(true);
-
-    if (HAS_EF) {
-      panel.style.background = '#1a1a2e';
-      panel.style.color = '#e0e0e0';
-      panel.style.borderRadius = '4px';
-      panel.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
-      panel.style.border = '1px solid #2d2d44';
-      elementInfo.style.background = '#0d0d1a';
-      elementInfo.style.color = '#b0b0c0';
-      statusBar.style.color = '#8888a0';
-      statusBar.style.borderTopColor = '#2d2d44';
-      const panelHeader = panel.querySelector('.sf-panel-header');
-      if (panelHeader) {
-        panelHeader.style.color = '#e0e0e0';
-        panelHeader.style.borderBottomColor = '#2d2d44';
-      }
-    }
+    requestAnimationFrame(positionPanel);
   }
 
   // Top frame listens for iframe relay
@@ -350,6 +374,7 @@
       }
       // Auto-deactivate picker after element selection (DevTools inspect behavior)
       togglePicker(false);
+      positionPanel();
     }
   });
 
@@ -374,9 +399,7 @@
     selectorsContainer.innerHTML = '';
 
     const details = document.createElement('div');
-    details.style.cssText = HAS_EF
-      ? 'font-size:12px;color:#8888a0;margin-bottom:8px;'
-      : 'font-size:12px;color:#656d76;margin-bottom:8px;';
+    details.style.cssText = 'font-size:12px;color:#656d76;margin-bottom:8px;';
     const lines = [];
     if (info.id) lines.push('ID: ' + info.id);
     if (info.classList.length) lines.push('Class: ' + info.classList.join(' '));
@@ -389,28 +412,15 @@
     const btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
 
-    let confirmBtn, repickBtn;
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'sf-btn select-btn';
+    confirmBtn.style.cssText = 'flex:1;padding:8px;font-size:13px;';
+    confirmBtn.textContent = 'Confirm';
 
-    if (HAS_EF) {
-      confirmBtn = document.createElement('ef-button');
-      confirmBtn.setAttribute('cta', '');
-      confirmBtn.textContent = 'Confirm';
-      confirmBtn.style.flex = '1';
-
-      repickBtn = document.createElement('ef-button');
-      repickBtn.textContent = 'Re-pick';
-      repickBtn.style.flex = '1';
-    } else {
-      confirmBtn = document.createElement('button');
-      confirmBtn.className = 'sf-btn select-btn';
-      confirmBtn.style.cssText = 'flex:1;padding:8px;font-size:13px;';
-      confirmBtn.textContent = 'Confirm';
-
-      repickBtn = document.createElement('button');
-      repickBtn.className = 'sf-btn';
-      repickBtn.style.cssText = 'flex:1;padding:8px;font-size:13px;';
-      repickBtn.textContent = 'Re-pick';
-    }
+    const repickBtn = document.createElement('button');
+    repickBtn.className = 'sf-btn';
+    repickBtn.style.cssText = 'flex:1;padding:8px;font-size:13px;';
+    repickBtn.textContent = 'Re-pick';
 
     confirmBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -457,37 +467,53 @@
     selectorsContainer.appendChild(analyzeBtn);
   }
 
-  // --- Float Ball: Toggle panel only (no auto-activate picker) ---
+  // --- Float Ball: Toggle panel (skip if just finished dragging) ---
+  let didDrag = false;
   ball.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (didDrag) { didDrag = false; return; }
     panelOpen = !panelOpen;
     panel.classList.toggle('open', panelOpen);
+    positionPanel();
   });
 
-  // --- Float Ball: Drag ---
+  // --- Float Ball: Drag (with shield to block iframe mouse capture) ---
   let dragging = false, dragX, dragY, ballX, ballY;
   ball.addEventListener('mousedown', (e) => {
     dragging = true;
+    didDrag = false;
     dragX = e.clientX;
     dragY = e.clientY;
     const rect = ball.getBoundingClientRect();
     ballX = rect.left;
     ballY = rect.top;
     ball.style.cursor = 'grabbing';
+    dragShield.style.display = 'block';
   });
   document.addEventListener('mousemove', (e) => {
     if (!dragging) return;
+    didDrag = true;
     const dx = e.clientX - dragX;
     const dy = e.clientY - dragY;
+    const newLeft = Math.max(0, Math.min(ballX + dx, window.innerWidth - 48));
+    const newTop = Math.max(0, Math.min(ballY + dy, window.innerHeight - 48));
     ball.style.position = 'fixed';
-    ball.style.left = (ballX + dx) + 'px';
-    ball.style.top = (ballY + dy) + 'px';
+    ball.style.left = newLeft + 'px';
+    ball.style.top = newTop + 'px';
     ball.style.right = 'auto';
     ball.style.bottom = 'auto';
+    positionPanel();
   });
   document.addEventListener('mouseup', () => {
+    if (!dragging) return;
     dragging = false;
     ball.style.cursor = 'grab';
+    positionPanel();
+    // Delay shield removal so it blocks post-drag mouseover/click
+    setTimeout(() => {
+      dragShield.style.display = 'none';
+      didDrag = false;
+    }, 100);
   });
 
   // --- Broadcast to all child frames (recursive, cross-origin safe) ---
@@ -608,7 +634,7 @@
   }
 
   document.addEventListener('mouseover', (e) => {
-    if (!pickerActive || e.target === host) return;
+    if (!pickerActive || didDrag || e.target === host) return;
     const rect = e.target.getBoundingClientRect();
     overlay.style.display = 'block';
     overlay.style.top = rect.top + 'px';
@@ -622,6 +648,7 @@
   }, true);
 
   document.addEventListener('click', (e) => {
+    if (didDrag) { didDrag = false; return; }
     if (!pickerActive || e.target === host) return;
     if (e.target.closest?.('#__selector-finder-host')) return;
 
@@ -639,6 +666,7 @@
         panel.classList.add('open');
       }
       togglePicker(false);
+      positionPanel();
       return;
     }
 
@@ -652,6 +680,7 @@
 
     // Auto-deactivate picker after element selection (DevTools inspect behavior)
     togglePicker(false);
+    positionPanel();
   }, true);
 
 })();

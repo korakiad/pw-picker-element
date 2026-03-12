@@ -1,6 +1,6 @@
 {
   "name": "playwright-picker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Standalone CLI element picker for Playwright browsers",
   "bin": { "playwright-picker": "./dist/cli.js" },
   "scripts": {

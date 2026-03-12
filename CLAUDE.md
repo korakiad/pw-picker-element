@@ -52,11 +52,17 @@ Exports: `ElementInfo`, `PickerResult`, `PickerOptions`, `runPicker()`, `buildFr
 
 Pure `ws` + `crypto`, zero VS Code dependencies. Token-authenticated, random port on `127.0.0.1`.
 
-### float-ball.js (shared with extension)
+### float-ball.js
 
-Source lives at `../playwright-healer/src/element-picker/injected/float-ball.js`. Copied to `dist/injected/` during build by `esbuild.js`'s `copyFloatBall()`.
+Source at `src/injected/float-ball.js`. Copied to `dist/injected/` during build by `esbuild.js`'s `copyFloatBall()`.
 
 In `pick` mode: auto-activates picker, shows Confirm/Re-pick buttons after click, sends `element-selected` on Confirm. After confirmation, the entire UI is **removed from the DOM** (`hideAllUI()`) to prevent appearing in subsequent screenshots.
+
+**Float ball UX:**
+- Click ball to toggle (minimize/expand) the panel — picker stays active while collapsed
+- Drag ball to reposition — ball is clamped to viewport bounds on drag and resize
+- Panel follows ball — positioned above (preferred) or below, centered horizontally
+- Drag shield prevents iframe mouse capture and accidental element selection during drag
 
 ### Skill File (`skill/SKILL.md`)
 
