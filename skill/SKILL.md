@@ -15,11 +15,24 @@ Visual overlay that lets the user click an element in the browser. Returns raw e
 
 ### Step 1: Inject float-ball.js
 
-Read `float-ball.js` from this skill directory, then inject into all frames:
+Read `float-ball.js` from this skill directory.
+
+**Main frame (simple — covers most cases):**
+
+1. Copy `float-ball.js` to a temp file, replacing `__FRAME_CHAIN__` with `[]`
+2. Inject via `addScriptTag`:
 
 ```
-playwright-cli run-code "
-  const script = `<FLOAT_BALL_JS_CONTENT>`;
+playwright-cli run-code "async page => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"
+```
+
+**All frames (pages with iframes):**
+
+1. For each frame, create a temp file with `__FRAME_CHAIN__` replaced by the frame's chain
+2. Inject each frame:
+
+```
+playwright-cli run-code "async page => {
   for (const frame of page.frames()) {
     const chain = [];
     let f = frame;
@@ -28,11 +41,13 @@ playwright-cli run-code "
       f = f.parentFrame();
     }
     try {
-      await frame.evaluate(script.replace('__FRAME_CHAIN__', JSON.stringify(chain)));
+      await frame.evaluate(<SCRIPT_WITH_CHAIN_REPLACED>);
     } catch {}
   }
-"
+}"
 ```
+
+Note: `require`/`import` are NOT available inside `run-code`. Read files with your own tools, then pass content inline or use `addScriptTag({ path })`.
 
 The picker activates automatically — user sees hover highlight overlay.
 
