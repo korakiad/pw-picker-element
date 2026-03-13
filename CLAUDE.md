@@ -8,21 +8,23 @@ Pure skill element picker for Playwright browsers. No CLI binary, no dependencie
 
 ```
 playwright-picker/
-  skill/
+  .claude/skills/playwright-picker/
     SKILL.md          # Agent orchestration instructions
     float-ball.js     # Injected into browser (pick-only, zero deps)
+  .github/agents/
+    playwright-healer.agent.md  # Copilot agent prompt
   CLAUDE.md           # This file
 ```
 
 ## How It Works
 
-1. Agent reads `skill/float-ball.js`
+1. Agent reads `.claude/skills/playwright-picker/float-ball.js`
 2. Injects into browser frames via `playwright-cli run-code` + `addScriptTag({ path })`
 3. User clicks element, sees Confirm/Re-pick UI
 4. On Confirm: `window.__pickerResult` is set, UI removed from DOM
-5. Agent polls via `playwright-cli eval "JSON.stringify(window.__pickerResult)"`
+5. Agent waits via blocking `run-code` poll loop (3s interval, 60s timeout)
 
-See `skill/SKILL.md` for full agent instructions.
+See `.claude/skills/playwright-picker/SKILL.md` for full agent instructions.
 
 ## float-ball.js
 

@@ -8,6 +8,13 @@ allowed-tools: Bash(playwright-cli:*)
 
 Visual overlay that lets the user click an element in the browser. Returns raw element info as JSON.
 
+### Invocation contract (important)
+
+- Always execute this `pick-element` workflow when using the picker.
+- Do not use an ad-hoc picker flow that bypasses this skill.
+- Do not inject any custom picker script other than `float-ball.js` from this skill directory.
+- If you need to adapt frame chain values, only replace `__FRAME_CHAIN__` in the copied temp script.
+
 ### Step 1: Inject float-ball.js
 
 Read `float-ball.js` from this skill directory.
@@ -18,7 +25,7 @@ Read `float-ball.js` from this skill directory.
 2. Inject via `addScriptTag`:
 
 ```
-playwright-cli run-code "async page => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"
+playwright-cli run-code "async (page) => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"
 ```
 
 **All frames (pages with iframes):**
@@ -27,7 +34,7 @@ playwright-cli run-code "async page => { await page.addScriptTag({ path: '<TEMP_
 2. Inject each frame:
 
 ```
-playwright-cli run-code "async page => {
+playwright-cli run-code "async (page) => {
   for (const frame of page.frames()) {
     const chain = [];
     let f = frame;
@@ -51,12 +58,12 @@ The picker activates automatically — user sees hover highlight overlay.
 Blocks until user confirms an element or 60s timeout:
 
 ```
-playwright-cli run-code "async page => {
+playwright-cli run-code "async (page) => {
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     const r = await page.evaluate(() => window.__pickerResult);
     if (r) return JSON.stringify(r);
-    await new Promise(ok => setTimeout(ok, 3000));
+    await page.waitForTimeout(3000);
   }
   return null;
 }"
