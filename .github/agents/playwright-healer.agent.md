@@ -164,11 +164,21 @@ Use the `playwright-picker` skill to let the user visually select the element:
 
 1. Read `float-ball.js` from the `playwright-picker/skill/` directory
 2. Save to a temp file, replacing `__FRAME_CHAIN__` with `[]`
-3. Inject and poll:
+3. Inject:
    ```bash
    playwright-cli run-code "async page => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"
-   # Poll every 3s until non-null (timeout 60s)
-   playwright-cli eval "JSON.stringify(window.__pickerResult)"
+   ```
+4. Wait for user selection (blocks until confirm or 60s timeout):
+   ```bash
+   playwright-cli run-code "async page => {
+     const deadline = Date.now() + 60000;
+     while (Date.now() < deadline) {
+       const r = await page.evaluate(() => window.__pickerResult);
+       if (r) return JSON.stringify(r);
+       await new Promise(ok => setTimeout(ok, 3000));
+     }
+     return null;
+   }"
    ```
 
 The user sees a visual overlay — hover to highlight, click to select, Confirm or Re-pick. Once confirmed, `window.__pickerResult` contains element info as JSON:
@@ -306,7 +316,7 @@ For each step in the template:
    c. Use the `playwright-picker` skill to let user identify the target element:
       - Read `float-ball.js` from `playwright-picker/skill/`, save to temp with `__FRAME_CHAIN__` → `[]`
       - Inject: `playwright-cli run-code "async page => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"`
-      - Poll: `playwright-cli eval "JSON.stringify(window.__pickerResult)"` (every 3s, timeout 60s)
+      - Wait: `playwright-cli run-code "async page => { const deadline = Date.now() + 60000; while (Date.now() < deadline) { const r = await page.evaluate(() => window.__pickerResult); if (r) return JSON.stringify(r); await new Promise(ok => setTimeout(ok, 3000)); } return null; }"`
       After getting the element info JSON, build a Playwright selector from it (see "Pick element in browser" for priority rules).
    d. After getting the selector, validate it works:
       ```bash

@@ -46,16 +46,24 @@ Note: `require`/`import` are NOT available inside `run-code`. Read files with yo
 
 The picker activates automatically — user sees hover highlight overlay.
 
-### Step 2: Poll for result
+### Step 2: Wait for user selection
 
-Poll every 3 seconds until non-null or 60 seconds elapsed:
+Blocks until user confirms an element or 60s timeout:
 
 ```
-playwright-cli eval "JSON.stringify(window.__pickerResult)"
+playwright-cli run-code "async page => {
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    const r = await page.evaluate(() => window.__pickerResult);
+    if (r) return JSON.stringify(r);
+    await new Promise(ok => setTimeout(ok, 3000));
+  }
+  return null;
+}"
 ```
 
-- `null` / `undefined` → user hasn't confirmed yet, keep polling
-- JSON string → user confirmed, parse and use
+- Returns JSON string → user confirmed, parse and use
+- Returns `null` → timeout, user did not select
 
 ### Step 3: Use element info
 
