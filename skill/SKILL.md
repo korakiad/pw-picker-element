@@ -8,11 +8,6 @@ allowed-tools: Bash(playwright-cli:*)
 
 Visual overlay that lets the user click an element in the browser. Returns raw element info as JSON.
 
-### Prerequisites
-
-- Browser running with `--remote-debugging-port=<port>`
-- `playwright-cli` daemon connected (`playwright-cli open --config=<path>`)
-
 ### Step 1: Inject float-ball.js
 
 Read `float-ball.js` from this skill directory.
