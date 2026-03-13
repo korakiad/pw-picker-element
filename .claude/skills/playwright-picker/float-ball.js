@@ -2,16 +2,13 @@
   "use strict";
 
   const CONFIG = {
-    wsPort: "__WS_PORT__",
-    wsToken: "__WS_TOKEN__",
-    mode: "__MODE__",  // "agent" | "standalone" | "pick"
-    frameChain: __FRAME_CHAIN__,  // Pre-computed by Playwright (works cross-origin)
+    frameChain: __FRAME_CHAIN__,
   };
 
   if (window.__selectorFinderActive) return;
   window.__selectorFinderActive = true;
 
-  // --- Utility functions (defined early so iframes can use them) ---
+  // --- Utility: extract element info ---
   function getElementInfo(el) {
     const attrs = {};
     for (const attr of el.attributes) attrs[attr.name] = attr.value;
@@ -24,7 +21,6 @@
       path.unshift(tag + id + cls);
       cur = cur.parentElement;
     }
-    // Use pre-computed frame chain from Playwright (works across cross-origin boundaries)
     const frameChain = CONFIG.frameChain || [];
     return {
       tagName: el.tagName.toLowerCase(),
@@ -40,12 +36,12 @@
     };
   }
 
-  // --- Iframe relay: if running in an iframe, highlight + relay clicks to top frame ---
+  // --- Iframe relay: highlight + relay clicks to top frame ---
   let isTopFrame;
   try {
     isTopFrame = window === window.top;
   } catch {
-    isTopFrame = false;  // Cross-origin: cannot compare, treat as iframe
+    isTopFrame = false;
   }
   if (!isTopFrame) {
     let pickerActive = true;
@@ -84,7 +80,6 @@
       } catch {}
     }, true);
 
-    // Listen for activation/deactivation from top frame
     window.addEventListener('message', (e) => {
       if (e.data?.type === '__selector-finder-deactivate') {
         pickerActive = false;
@@ -108,7 +103,7 @@
   document.body.appendChild(host);
   const shadow = host.attachShadow({ mode: 'closed' });
 
-  // --- Hide/show entire UI (prevents picker from appearing in screenshots) ---
+  // --- Hide/show entire UI ---
   function hideAllUI() {
     if (host.parentNode) host.parentNode.removeChild(host);
     broadcastToAllFrames({ type: '__selector-finder-cleanup' });
@@ -118,7 +113,7 @@
     host.style.cssText = 'all:initial;position:fixed;z-index:2147483647;';
   }
 
-  // --- Styles ---
+  // --- Styles (pick-mode only) ---
   const style = document.createElement('style');
   style.textContent = `
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -157,30 +152,14 @@
       font-family: 'Fira Code', monospace; font-size: 12px;
       margin-bottom: 12px; word-break: break-all;
     }
-    .sf-selector-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 0; border-bottom: 1px solid #f0f0f0;
-    }
-    .sf-selector-row:last-child { border-bottom: none; }
-    .sf-selector-text {
-      font-family: 'Fira Code', monospace; font-size: 12px;
-      flex: 1; margin-right: 8px; word-break: break-all;
-    }
     .sf-btn {
       padding: 4px 10px; border-radius: 6px; border: 1px solid #d0d7de;
       background: #fff; color: #24292f; cursor: pointer; font-size: 12px;
       margin-left: 4px; white-space: nowrap;
     }
     .sf-btn:hover { background: #f3f4f6; }
-    .sf-btn.primary { background: #0969da; color: #fff; border-color: #0969da; }
-    .sf-btn.primary:hover { background: #0860c4; }
-    .sf-btn.select-btn { background: #1a7f37; color: #fff; border-color: #1a7f37; }
-    .sf-btn.select-btn:hover { background: #157a2f; }
-    .sf-btn.analyze {
-      background: #0969da; color: #fff; border-color: #0969da;
-      width: 100%; padding: 8px; font-size: 13px; margin-top: 8px;
-    }
-    .sf-btn.analyze:hover { background: #0860c4; }
+    .sf-btn.confirm { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+    .sf-btn.confirm:hover { background: #157a2f; }
     .sf-overlay {
       position: fixed; pointer-events: none;
       border: 2px solid #0969da; border-radius: 3px;
@@ -209,7 +188,7 @@
   overlay.className = 'sf-overlay';
   shadow.appendChild(overlay);
 
-  // --- Drag Shield (blocks iframe mouse capture during ball drag) ---
+  // --- Drag Shield ---
   const dragShield = document.createElement('div');
   dragShield.className = 'sf-drag-shield';
   shadow.appendChild(dragShield);
@@ -218,7 +197,7 @@
   const ball = document.createElement('button');
   ball.className = 'sf-ball';
   ball.textContent = '\uD83C\uDFAF';
-  ball.title = 'Selector Finder';
+  ball.title = 'Element Picker';
   shadow.appendChild(ball);
 
   // --- Panel ---
@@ -226,11 +205,10 @@
   panel.className = 'sf-panel';
   panel.innerHTML = `
     <div class="sf-panel-header">
-      <span>Selector Finder</span>
+      <span>Element Picker</span>
       <button class="sf-inspect-btn" id="inspect-toggle" title="Select an element on the page">\uD83D\uDD0D</button>
     </div>
     <div class="sf-panel-body">
-      <div id="picker-hint" style="display:none; padding:8px 12px; border-radius:6px; margin-bottom:8px; font-size:13px;"></div>
       <div class="sf-element-info" style="display:none"></div>
       <div class="sf-selectors"></div>
     </div>
@@ -243,7 +221,6 @@
   const statusBar = panel.querySelector('.sf-status');
   const inspectBtn = shadow.getElementById('inspect-toggle');
 
-  // --- Inspect button: manual toggle for picker mode ---
   inspectBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     togglePicker(!pickerActive);
@@ -265,9 +242,7 @@
     const ph = pr.height || 200;
     const pw = 380;
 
-    // Vertical: prefer above ball, fall back to below
     let top = (br.top - gap - ph > 0) ? br.top - gap - ph : br.bottom + gap;
-    // Horizontal: center on ball, clamp to viewport
     let left = br.left + br.width / 2 - pw / 2;
     left = Math.max(gap, Math.min(left, vw - pw - gap));
     top = Math.max(gap, Math.min(top, vh - ph - gap));
@@ -280,7 +255,6 @@
 
   // --- Clamp ball to viewport on resize ---
   function clampBall() {
-    // Only clamp if ball was dragged to explicit position
     if (!ball.style.left) { positionPanel(); return; }
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -294,103 +268,27 @@
   }
   window.addEventListener('resize', clampBall);
 
-  // --- WebSocket ---
-  let ws = null;
-  function connectWs() {
-    ws = new WebSocket(`ws://127.0.0.1:${CONFIG.wsPort}?token=${CONFIG.wsToken}`);
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        switch (msg.type) {
-          case 'status-update':
-            statusBar.textContent = msg.payload.text || '';
-            break;
+  // --- Auto-activate picker (pick-only, no mode check) ---
+  panelOpen = true;
+  panel.classList.add('open');
+  togglePicker(true);
+  requestAnimationFrame(positionPanel);
 
-          case 'selector-loading':
-            selectorsContainer.innerHTML = '<div style="text-align:center;padding:20px;color:#656d76;">Analyzing element...</div>';
-            break;
-
-          case 'selector-results':
-            renderSelectors(pendingElementInfo, msg.payload.selectors);
-            break;
-
-          case 'selector-error': {
-            const errDiv = document.createElement('div');
-            errDiv.style.cssText = 'text-align:center;padding:20px;color:#d1242f;';
-            errDiv.textContent = 'Error: ' + (msg.payload.message || 'Unknown error');
-            selectorsContainer.innerHTML = '';
-            selectorsContainer.appendChild(errDiv);
-            break;
-          }
-
-          case 'activate-picker':
-            showAllUI();
-            togglePicker(true);
-            if (msg.payload && msg.payload.hint) {
-              const hintEl = shadow.getElementById('picker-hint');
-              if (hintEl) {
-                hintEl.textContent = '\uD83C\uDFAF ' + msg.payload.hint;
-                hintEl.style.display = 'block';
-                hintEl.style.background = '#fff3cd';
-                hintEl.style.color = '#664d03';
-              }
-            }
-            break;
-
-          case 'deactivate-picker': {
-            togglePicker(false);
-            hideAllUI();
-            const hintEl2 = shadow.getElementById('picker-hint');
-            if (hintEl2) hintEl2.style.display = 'none';
-            break;
-          }
-        }
-      } catch {}
-    };
-    ws.onclose = () => { setTimeout(connectWs, 2000); };
-    ws.onerror = () => {};
-  }
-  connectWs();
-
-  if (CONFIG.mode === 'pick') {
-    panelOpen = true;
-    panel.classList.add('open');
-    togglePicker(true);
-    requestAnimationFrame(positionPanel);
-  }
-
-  // Top frame listens for iframe relay
+  // --- Top frame listens for iframe relay ---
   window.addEventListener('message', (e) => {
     if (e.data?.type === '__selector-finder-iframe-click') {
       pendingElementInfo = e.data.info;
-      if (CONFIG.mode === 'pick') {
-        showPickConfirm(e.data.info);
-      } else {
-        showPendingConfirm(e.data.info);
-      }
+      showPickConfirm(e.data.info);
       if (!panelOpen) {
         panelOpen = true;
         panel.classList.add('open');
       }
-      // Auto-deactivate picker after element selection (DevTools inspect behavior)
       togglePicker(false);
       positionPanel();
     }
   });
 
-  function wsSend(type, payload) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type, payload }));
-    }
-  }
-
-  function showLoading(info) {
-    elementInfo.style.display = 'block';
-    elementInfo.textContent = `<${info.tagName}${info.id ? ' id="'+info.id+'"' : ''}${info.classList.length ? ' class="'+info.classList.join(' ')+'"' : ''}>`;
-    statusBar.textContent = info.tagName + (info.id ? '#'+info.id : '');
-    selectorsContainer.innerHTML = '<div style="text-align:center;padding:20px;color:#656d76;">Analyzing element...</div>';
-  }
-
+  // --- Pick confirm UI (writes result to window.__pickerResult) ---
   function showPickConfirm(info) {
     elementInfo.style.display = 'block';
     elementInfo.textContent = `<${info.tagName}${info.id ? ' id="'+info.id+'"' : ''}${info.classList.length ? ' class="'+info.classList.join(' ')+'"' : ''}>`;
@@ -413,7 +311,7 @@
     btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
 
     const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'sf-btn select-btn';
+    confirmBtn.className = 'sf-btn confirm';
     confirmBtn.style.cssText = 'flex:1;padding:8px;font-size:13px;';
     confirmBtn.textContent = 'Confirm';
 
@@ -424,7 +322,7 @@
 
     confirmBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      wsSend('element-selected', { info });
+      window.__pickerResult = info;
       hideAllUI();
     });
 
@@ -438,36 +336,7 @@
     selectorsContainer.appendChild(btnRow);
   }
 
-  function showPendingConfirm(info) {
-    elementInfo.style.display = 'block';
-    elementInfo.textContent = `<${info.tagName}${info.id ? ' id="'+info.id+'"' : ''}${info.classList.length ? ' class="'+info.classList.join(' ')+'"' : ''}>`;
-    statusBar.textContent = info.tagName + (info.id ? '#'+info.id : '');
-
-    selectorsContainer.innerHTML = '';
-
-    const details = document.createElement('div');
-    details.style.cssText = 'font-size:12px;color:#656d76;margin-bottom:8px;';
-    const lines = [];
-    if (info.id) lines.push('ID: ' + info.id);
-    if (info.classList.length) lines.push('Class: ' + info.classList.join(' '));
-    if (info.role) lines.push('Role: ' + info.role);
-    if (info.textContent) lines.push('Text: ' + info.textContent.slice(0, 60));
-    details.textContent = lines.join(' \u00B7 ') || 'No identifying attributes';
-    selectorsContainer.appendChild(details);
-
-    const analyzeBtn = document.createElement('button');
-    analyzeBtn.className = 'sf-btn analyze';
-    analyzeBtn.textContent = 'Analyze';
-    analyzeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!pendingElementInfo) return;
-      showLoading(pendingElementInfo);
-      wsSend('element-selected', { info: pendingElementInfo });
-    });
-    selectorsContainer.appendChild(analyzeBtn);
-  }
-
-  // --- Float Ball: Toggle panel (skip if just finished dragging) ---
+  // --- Float Ball: Toggle panel ---
   let didDrag = false;
   ball.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -477,7 +346,7 @@
     positionPanel();
   });
 
-  // --- Float Ball: Drag (with shield to block iframe mouse capture) ---
+  // --- Float Ball: Drag ---
   let dragging = false, dragX, dragY, ballX, ballY;
   ball.addEventListener('mousedown', (e) => {
     dragging = true;
@@ -509,14 +378,13 @@
     dragging = false;
     ball.style.cursor = 'grab';
     positionPanel();
-    // Delay shield removal so it blocks post-drag mouseover/click
     setTimeout(() => {
       dragShield.style.display = 'none';
       didDrag = false;
     }, 100);
   });
 
-  // --- Broadcast to all child frames (recursive, cross-origin safe) ---
+  // --- Broadcast to all child frames ---
   function broadcastToAllFrames(msg) {
     function send(win) {
       for (let i = 0; i < win.frames.length; i++) {
@@ -537,102 +405,15 @@
     statusBar.textContent = on ? 'Picker mode: active \u2014 click an element' : 'Picker mode: inactive';
     if (!on) {
       overlay.style.display = 'none';
-      // Reset overlay color to default blue for next activation
       overlay.style.borderColor = '#0969da';
       overlay.style.background = 'rgba(9,105,218,0.1)';
     }
-    // Sync picker state to all child iframes
     broadcastToAllFrames({
       type: on ? '__selector-finder-activate' : '__selector-finder-deactivate',
     });
   }
 
-  // --- Element Picker Events (on document, not shadow) ---
-  function renderSelectors(info, selectors) {
-    if (!info) return;
-    elementInfo.style.display = 'block';
-    elementInfo.textContent = `<${info.tagName}${info.id ? ' id="'+info.id+'"' : ''}${info.classList.length ? ' class="'+info.classList.join(' ')+'"' : ''}>`;
-    statusBar.textContent = info.tagName + (info.id ? '#'+info.id : '');
-
-    selectorsContainer.innerHTML = '';
-    selectors.forEach((s) => {
-      const row = document.createElement('div');
-      row.className = 'sf-selector-row';
-      row.style.flexDirection = 'column';
-      row.style.alignItems = 'stretch';
-
-      const topRow = document.createElement('div');
-      topRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
-
-      const selectorText = document.createElement('div');
-      selectorText.className = 'sf-selector-text';
-      selectorText.textContent = s.selector;
-
-      const btnGroup = document.createElement('div');
-      btnGroup.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'sf-btn';
-      copyBtn.textContent = 'Copy';
-      copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(s.selector);
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => copyBtn.textContent = 'Copy', 1500);
-      });
-
-      btnGroup.appendChild(copyBtn);
-
-      // Replace button: only shown in standalone mode
-      if (CONFIG.mode !== 'agent') {
-        const replaceBtn = document.createElement('button');
-        replaceBtn.className = 'sf-btn primary';
-        replaceBtn.textContent = 'Replace';
-        replaceBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          wsSend('selector-chosen', {
-            action: 'replace-selection',
-            selector: s.selector,
-            selectorType: s.type,
-            elementInfo: info,
-          });
-          replaceBtn.textContent = 'Sent!';
-          setTimeout(() => replaceBtn.textContent = 'Replace', 1500);
-        });
-        btnGroup.appendChild(replaceBtn);
-      }
-
-      // Select button: only shown in agent mode
-      if (CONFIG.mode === 'agent') {
-        const selectBtn = document.createElement('button');
-        selectBtn.textContent = 'Select';
-        selectBtn.className = 'sf-btn select-btn';
-        selectBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          wsSend('selector-chosen', {
-            action: 'select',
-            selector: s.selector,
-            type: s.type,
-            elementInfo: info,
-          });
-          hideAllUI();
-        });
-        btnGroup.appendChild(selectBtn);
-      }
-
-      topRow.appendChild(selectorText);
-      topRow.appendChild(btnGroup);
-
-      const reasonEl = document.createElement('div');
-      reasonEl.style.cssText = 'font-size:11px;color:#656d76;margin-top:4px;';
-      reasonEl.textContent = s.reason || '';
-
-      row.appendChild(topRow);
-      if (s.reason) row.appendChild(reasonEl);
-      selectorsContainer.appendChild(row);
-    });
-  }
-
+  // --- Element Picker Events ---
   document.addEventListener('mouseover', (e) => {
     if (!pickerActive || didDrag || e.target === host) return;
     const rect = e.target.getBoundingClientRect();
@@ -659,26 +440,11 @@
     const info = getElementInfo(e.target);
     pendingElementInfo = info;
 
-    if (CONFIG.mode === 'pick') {
-      showPickConfirm(info);
-      if (!panelOpen) {
-        panelOpen = true;
-        panel.classList.add('open');
-      }
-      togglePicker(false);
-      positionPanel();
-      return;
-    }
-
-    showPendingConfirm(info);
-
-    // Open panel if not open
+    showPickConfirm(info);
     if (!panelOpen) {
       panelOpen = true;
       panel.classList.add('open');
     }
-
-    // Auto-deactivate picker after element selection (DevTools inspect behavior)
     togglePicker(false);
     positionPanel();
   }, true);

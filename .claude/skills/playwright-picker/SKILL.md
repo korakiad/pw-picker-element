@@ -1,0 +1,91 @@
+---
+name: playwright-picker
+description: Visual element picker — user clicks element in browser, returns raw element info as JSON
+allowed-tools: Bash(playwright-cli:*)
+---
+
+## pick-element
+
+Visual overlay that lets the user click an element in the browser. Returns raw element info as JSON.
+
+### Invocation contract (important)
+
+- Always execute this `pick-element` workflow when using the picker.
+- Do not use an ad-hoc picker flow that bypasses this skill.
+- Do not inject any custom picker script other than `float-ball.js` from this skill directory.
+- If you need to adapt frame chain values, only replace `__FRAME_CHAIN__` in the copied temp script.
+
+### Step 1: Inject float-ball.js
+
+Read `float-ball.js` from this skill directory.
+
+**Main frame (simple — covers most cases):**
+
+1. Copy `float-ball.js` to a temp file, replacing `__FRAME_CHAIN__` with `[]`
+2. Inject via `addScriptTag`:
+
+```
+playwright-cli run-code "async (page) => { await page.addScriptTag({ path: '<TEMP_PATH>' }); }"
+```
+
+**All frames (pages with iframes):**
+
+1. For each frame, create a temp file with `__FRAME_CHAIN__` replaced by the frame's chain
+2. Inject each frame:
+
+```
+playwright-cli run-code "async (page) => {
+  for (const frame of page.frames()) {
+    const chain = [];
+    let f = frame;
+    while (f.parentFrame()) {
+      chain.unshift({ tagName: 'iframe', name: f.name() || null, src: f.url() || null });
+      f = f.parentFrame();
+    }
+    try {
+      await frame.evaluate(<SCRIPT_WITH_CHAIN_REPLACED>);
+    } catch {}
+  }
+}"
+```
+
+Note: `require`/`import` are NOT available inside `run-code`. Read files with your own tools, then pass content inline or use `addScriptTag({ path })`.
+
+The picker activates automatically — user sees hover highlight overlay.
+
+### Step 2: Wait for user selection
+
+Blocks until user confirms an element or 60s timeout:
+
+```
+playwright-cli run-code "async (page) => {
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    const r = await page.evaluate(() => window.__pickerResult);
+    if (r) return JSON.stringify(r);
+    await page.waitForTimeout(3000);
+  }
+  return null;
+}"
+```
+
+- Returns JSON string → user confirmed, parse and use
+- Returns `null` → timeout, user did not select
+
+### Step 3: Use element info
+
+Result fields: `tagName`, `id`, `role`, `ariaLabel`, `classList`, `attributes`, `textContent`, `parentPath`, `outerHTML`, `frameChain`
+
+The agent decides how to use this info based on project context (framework, test patterns, POM structure).
+
+### Iframe elements
+
+When `frameChain` is non-null, the element lives inside iframe(s). Each entry has `{ tagName, name, src }`. Use the chain to build the appropriate frame selector for the project's framework.
+
+### Dropdown pattern (multi-step)
+
+If the selected element is a dropdown/select/combobox:
+1. First pick returns the dropdown container info
+2. Use `playwright-cli click <ref>` to open the dropdown
+3. Re-inject float-ball.js and poll again for the option element
+4. Build selector from both element infos
